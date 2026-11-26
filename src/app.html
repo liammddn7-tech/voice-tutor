@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Voice Tutor</title>
+<meta name="theme-color" content="#c4572e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tutor">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{
+  --bg:#f6f4ef; --panel:#ffffff; --ink:#1d1c1a; --muted:#6b6860; --line:#e3dfd6;
+  --accent:#c4572e; --accent-ink:#fff; --listen:#2f7d5b; --think:#8a6d1f; --speak:#2f5f9e;
+  --me:#efe9dd; --tutor:#ffffff; --danger:#a33;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#161513; --panel:#1f1e1b; --ink:#ece9e2; --muted:#9a968c; --line:#33312c;
+    --accent:#e07a4f; --accent-ink:#161513; --listen:#4fb488; --think:#d1ad4a; --speak:#6d9de0;
+    --me:#2a2824; --tutor:#1f1e1b; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+button{font:inherit;color:inherit}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{font-size:17px;margin:0;font-weight:650}
+#stats{color:var(--muted);font-size:14px;flex:1;min-width:200px}
+.hbtn{background:none;border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:14px}
+.hbtn:hover{border-color:var(--muted)}
+main{flex:1;display:flex;flex-direction:column;max-width:760px;width:100%;margin:0 auto;padding:0 16px;min-height:0}
+#log{flex:1;overflow-y:auto;padding:16px 0;display:flex;flex-direction:column;gap:10px;min-height:120px}
+.msg{padding:10px 14px;border-radius:12px;max-width:88%;white-space:pre-wrap;border:1px solid var(--line)}
+.me{background:var(--me);align-self:flex-end}
+.tutor{background:var(--tutor);align-self:flex-start}
+.note{align-self:center;color:var(--muted);font-size:13px;border:none;padding:2px}
+.err{align-self:center;color:var(--danger);font-size:14px;border-color:var(--danger)}
+#controls{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px 0 18px;border-top:1px solid var(--line)}
+#status{font-size:15px;color:var(--muted);min-height:22px;text-align:center}
+#talk{width:132px;height:132px;border-radius:50%;border:none;background:var(--accent);color:var(--accent-ink);font-size:19px;font-weight:650;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.18);transition:transform .1s, background .2s;touch-action:manipulation;user-select:none}
+#talk:active{transform:scale(.96)}
+#talk.listening{background:var(--listen);animation:pulse 1.4s infinite}
+#talk.thinking{background:var(--think)}
+#talk.speaking{background:var(--speak)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,125,91,.5)}70%{box-shadow:0 0 0 22px rgba(47,125,91,0)}100%{box-shadow:0 0 0 0 rgba(47,125,91,0)}}
+#level{width:132px;height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+#levelbar{height:100%;width:0;background:var(--listen);transition:width .08s}
+.row{display:flex;gap:8px;width:100%;align-items:center;flex-wrap:wrap;justify-content:center}
+#typed{flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font:inherit}
+label.toggle{font-size:14px;color:var(--muted);display:flex;gap:6px;align-items:center;cursor:pointer}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 40px);padding:0}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dhead{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+.dhead h2{margin:0;font-size:17px}
+.dbody{padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+.dbody label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+.dbody input,.dbody select,.dbody textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.dbody textarea{min-height:260px;font-size:13px;font-family:ui-monospace,Consolas,monospace}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:560px){.grid2{grid-template-columns:1fr}}
+.hint{font-size:13px;color:var(--muted);margin:0}
+pre.records{white-space:pre-wrap;font-size:13px;font-family:ui-monospace,Consolas,monospace;margin:0}
+@media (max-width:560px){
+  header{padding:8px 12px;gap:8px}
+  header h1{display:none}
+  #stats{order:9;flex-basis:100%;font-size:13px}
+  #talk{width:170px;height:170px;font-size:22px}
+  #level{width:170px}
+  .msg{max-width:94%}
+}
+.primary{background:var(--accent);color:var(--accent-ink);border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1>Voice Tutor</h1>
+  <div id="stats">Loading…</div>
+  <button class="hbtn" id="btnRecords">Records</button>
+  <button class="hbtn" id="btnNew">New session</button>
+  <button class="hbtn" id="btnSettings">Settings</button>
+</header>
+<main>
+  <div id="log" aria-live="polite"></div>
+  <div id="controls">
+    <div id="status">Tap the button and start talking.</div>
+    <button id="talk" aria-label="Talk">Talk</button>
+    <div id="level"><div id="levelbar"></div></div>
+    <div class="row">
+      <label class="toggle"><input type="checkbox" id="handsfree"> Hands-free</label>
+      <label class="toggle"><input type="checkbox" id="keepawake"> Keep screen on</label>
+    </div>
+    <form class="row" id="typeform">
+      <input id="typed" placeholder="Or type here and press Enter" autocomplete="off">
+    </form>
+  </div>
+</main>
+
+<dialog id="dlgSettings">
+  <div class="dhead"><h2>Settings</h2><button class="hbtn" data-close>Close</button></div>
+  <div class="dbody">
+    <p class="hint">Your keys stay in this browser on this computer. They are sent only to Anthropic and OpenAI.</p>
+    <div class="grid2">
+      <label>Anthropic API key<input type="password" id="sAnthKey" placeholder="sk-ant-..."></label>
+      <label>OpenAI API key<input type="password" id="sOaiKey" placeholder="sk-..."></label>
+    </div>
+    <div class="grid2">
+      <label>Tutor model
+        <select id="sModel">
+          <option value="claude-opus-5-5">Claude Opus 5.5 (smartest)</option>
+          <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper, faster)</option>
+          <option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest, fastest)</option>
+        </select></label>
+      <label>Thinking effort
+        <select id="sEffort">
+          <option value="low">Low (fastest replies)</option>
+          <option value="medium">Medium</option>
+          <option value="high">High (slower)</option>
+        </select></label>
+    </div>
+    <div class="grid2">
+      <label>Voice
+        <select id="sVoice">
+          <option>marin</option><option>cedar</option><option>coral</option><option>sage</option><option>alloy</option>
+          <option>ash</option><option>ballad</option><option>echo</option><option>fable</option><option>nova</option>
+          <option>onyx</option><option>shimmer</option><option>verse</option>
+        </select></label>
+      <label>Speaking speed<input type="number" id="sSpeed" min="0.7" max="1.5" step="0.05"></label>
+    </div>
+    <div class="grid2">
+      <label>Speech-to-text model<input id="sSttModel"></label>
+      <label>Text-to-speech model<input id="sTtsModel"></label>
+    </div>
+    <label>Voice style (tells the voice how to sound)<input id="sVoiceStyle"></label>
+    <div class="grid2">
+      <label>Pause that ends your turn in hands-free (seconds)<input type="number" id="sSilence" min="0.6" max="5" step="0.1"></label>
+      <label>Daily limits: new items / reviews<span style="display:flex;gap:8px"><input type="number" id="sNewLimit" style="flex:1"><input type="number" id="sReviewLimit" style="flex:1"></span></label>
+    </div>
+    <label>Tutor rules (paste a new rules version here to change how the tutor teaches)<textarea id="sRules"></textarea></label>
+    <div class="row" style="justify-content:space-between">
+      <button class="hbtn" id="btnResetRules">Reset rules to default</button>
+      <span style="display:flex;gap:8px">
+        <button class="hbtn" id="btnTestVoice">Test voice</button>
+        <button class="primary" id="btnSaveSettings">Save</button>
+      </span>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);width:100%">
+    <p class="hint">Backups: your records live in this browser. Download a backup now and then, and to move to another computer.</p>
+    <div class="row" style="justify-content:flex-start">
+      <button class="hbtn" id="btnBackup">Download backup</button>
+      <label class="hbtn" style="flex-direction:row;color:var(--ink)">Restore backup<input type="file" id="fileRestore" accept=".json" hidden></label>
+      <button class="hbtn" id="btnExportMd">Download records as Markdown</button>
+    </div>
+    <p class="hint" id="costLine"></p>
+  </div>
+</dialog>
+
+<dialog id="dlgRecords">
+  <div class="dhead"><h2>Records</h2><button class="hbtn" data-close>Close</button></div>
+  <div class="dbody"><pre class="records" id="recordsText"></pre></div>
+</dialog>
+
+<script type="module">
+import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.8.0/+esm";
+
+/* ---------------- Default tutor rules (adapted from rules-v3 for this app) ---------------- */
+const DEFAULT_RULES = `You are my Socratic tutor in a spoken conversation. I study for hours every day across many topics. My goal is deep understanding and long-term memory, not just feeling like I understand. My records (topics, review items, weak spots, session notes, daily counts) live in this app. You read and change them only with your tools.
+
+How the day is built
+1. Work in blocks of about 50 minutes: about 10 minutes of mixed review, about 35 minutes on one topic, then 5 minutes of closed-book recall and updating the records. After each block, tell me to take a 5 to 10 minute break away from screens and audio. After every third block, suggest a longer break of 20 to 30 minutes. Each of my messages starts with the local time, so you can track this.
+2. Watch for tiredness: slower answers, more misses, or vague answers. If you notice it, say so and offer a break, a switch to review, or a lighter topic. Don't push through.
+3. Make the last block of the day mostly review, not new material.
+
+Start of each block
+4. Call get_overview, then get_due_items. Check today's review count against the daily budget.
+5. Attack one weak spot first, using a fresh question that targets the underlying mistake, not one I've seen before.
+6. Then review about 15 to 20 due items, most overdue first, mixed across topics so I don't know which topic is coming next. Stop at the daily budget. Grade each one with grade_item right after I answer.
+7. Ask one question that links today's topic to a different topic I've studied.
+
+While teaching
+8. Keep turns short: two or three sentences, then one question. Never read out lists. Wait for me. Bring in one new idea at a time, and don't add the next until I've worked with it in my own words. Less, digested, beats more, half-heard.
+9. Before you explain, make me guess or attempt it first.
+10. Don't accept "makes sense." Make me explain it back or apply it to a new case.
+11. Give specific feedback: what was right, what was wrong, and why. Skip empty praise.
+12. When I'm stuck, give the smallest hint. Give the answer only after two hints.
+13. Sometimes ask how sure I am before revealing the answer, and point out confident mistakes.
+14. Come back to earlier ideas from a new angle, never as a straight repeat: a different story or example, why it matters, where it came from, what breaks without it, how it links to another topic, how an expert would see it. For reasoning, don't re-drill a solved problem. Give me a new situation that needs the same thinking.
+15. Aim for me getting about three out of four right. Push harder or step back to keep it there.
+16. Every ten minutes or so, have me summarise as if teaching a beginner, then probe the gaps.
+17. For facts: hang each one on a reason, story or link to something I know, quiz in both directions, and have me tell similar facts apart.
+18. For reasoning: work one example together, then give me the next with less help each time. Make me think out loud and say why each step works, and change the surface details so I learn the idea, not one problem.
+19. Every few blocks, or when I say "be my beginner," play a curious, confused beginner while I teach you the topic. Ask naive questions, misunderstand like a real beginner, and push on any step I skip or cover with jargon. Then step out and tell me which gaps your questions exposed.
+
+End of each block
+20. Ask me to list the key ideas from memory before you fill in what I missed.
+21. Turn each new idea I learned into one review item with add_items: a single question with a short answer. Stay within the daily new-item limit.
+22. Update the records: make sure every recalled item was graded (easy, solid, shaky, miss, confident_miss, judged from how I answered; I never rate myself), update weak spots, add a session entry with log_session, record any good cross-topic link with add_link, and call finish_block.`;
+
+const VOICE_RULES = `
+Speaking style for this app (always applies)
+- Everything you write is read aloud by a text-to-speech voice. Write plain spoken sentences only: no markdown, no bullet points, no headings, no emoji, no symbols that read badly aloud. Spell out formulas in words when needed.
+- Never say item ids, tool names, dates in ISO format, or that you are updating records. Do record-keeping silently with tools while you talk.
+- My words come from speech recognition and may contain transcription errors. If something sounds garbled, guess sensibly or ask me to repeat it.
+- Messages in square brackets are notes from the app, not from me.
+- To start a new topic, call create_topic first. Topic names should be short and plain, like "Organic chemistry" or "Roman history".`;
+
+/* ---------------- Storage (IndexedDB) ---------------- */
+const idb = (() => {
+  let dbp;
+  const open = () => dbp ??= new Promise((res, rej) => {
+    const r = indexedDB.open("voice-tutor", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  return {
+    async get(k){ const db = await open(); return new Promise((res, rej) => { const t = db.transaction("kv").objectStore("kv").get(k); t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error); }); },
+    async set(k, v){ const db = await open(); return new Promise((res, rej) => { const t = db.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); },
+  };
+})();
+try { navigator.storage?.persist?.(); } catch {}
+
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+/* ---------------- Settings ---------------- */
+const IS_PHONE = matchMedia("(pointer:coarse)").matches;
+const DEFAULT_SETTINGS = {
+  anthKey: "", oaiKey: "", model: "claude-opus-5-5", effort: "low",
+  voice: "marin", speed: 1.0, sttModel: "gpt-4o-transcribe", ttsModel: "gpt-4o-mini-tts",
+  voiceStyle: "A warm, curious, encouraging tutor. Speak naturally and clearly at a relaxed conversational pace.",
+  silence: 1.4, newLimit: 30, reviewLimit: 100, rules: DEFAULT_RULES, handsfree: IS_PHONE, keepAwake: IS_PHONE, beeps: true,
+};
+let S = { ...DEFAULT_SETTINGS, ...lsGet("vt-settings", {}) };
+const saveSettings = () => lsSet("vt-settings", S);
+
+/* ---------------- Dates ---------------- */
+const pad = n => String(n).padStart(2, "0");
+const dstr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today = () => dstr(new Date());
+const parseD = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
+const addDays = (s, n) => { const d = parseD(s); d.setDate(d.getDate() + n); return dstr(d); };
+const daysBetween = (a, b) => Math.round((parseD(b) - parseD(a)) / 86400000);
+const nowTime = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+/* ---------------- Records ---------------- */
+let R = null; // records
+const emptyRecords = () => ({ version: 1, topics: {}, habits: [], links: [], days: {}, nextId: 1, cost: {} });
+async function loadRecords(){ R = (await idb.get("records")) || emptyRecords(); }
+let saveTimer;
+function saveRecords(){ clearTimeout(saveTimer); saveTimer = setTimeout(() => idb.set("records", R).catch(e => showErr("Could not save records: " + e.message)), 200); }
+
+const slug = s => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
+function findTopic(name){
+  if (!name) return null;
+  const k = slug(name);
+  if (R.topics[k]) return R.topics[k];
+  return Object.values(R.topics).find(t => t.name.toLowerCase() === String(name).toLowerCase()) || null;
+}
+function day(d = today()){
+  R.days[d] ??= { blocks: 0, reviews: 0, newItems: 0, notes: [], dueAtStart: null };
+  // keep 30 days
+  const keys = Object.keys(R.days).sort();
+  while (keys.length > 30) delete R.days[keys.shift()];
+  return R.days[d];
+}
+function allItems(){ return Object.values(R.topics).flatMap(t => t.items.map(i => ({ ...i, topic: t.name }))); }
+function dueItems(){
+  const t = today();
+  return allItems().filter(i => i.due <= t)
+    .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.ease - b.ease));
+}
+function newLimitToday(){
+  // auto-throttle: over budget 3 days running -> half the new-item limit
+  const keys = Object.keys(R.days).sort().slice(-3);
+  const throttled = keys.length === 3 && keys.every(k => R.days[k].dueAtStart != null && R.days[k].dueAtStart > S.reviewLimit);
+  return throttled ? Math.floor(S.newLimit / 2) : S.newLimit;
+}
+function ensureDayStart(){
+  const d = day();
+  if (d.dueAtStart == null) { d.dueAtStart = dueItems().length; saveRecords(); }
+}
+
+const GRADES = {
+  easy:           { mult: e => e + 0.5, de: +0.1 },
+  solid:          { mult: e => e,       de: 0 },
+  shaky:          { mult: () => 1.2,    de: -0.15 },
+  miss:           { reset: true,        de: -0.2 },
+  confident_miss: { reset: true,        de: -0.3 },
+};
+function scheduleItem(item, grade){
+  const g = GRADES[grade];
+  const t = today();
+  const sameDay = item.last === t;
+  if (sameDay && !g.reset) {
+    // a re-ask in the same day (e.g. after a miss): keep tomorrow, no ease change
+    item.lastGrade = grade; item.gap = 1; item.due = addDays(t, 1);
+    return { counted: false };
+  }
+  const since = Math.max(1, daysBetween(item.last || item.created, t));
+  if (g.reset) item.gap = 1;
+  else item.gap = Math.max(1, Math.round(since * g.mult(item.ease)));
+  item.ease = Math.min(3.0, Math.max(1.3, +(item.ease + g.de).toFixed(2)));
+  item.last = t; item.due = addDays(t, item.gap); item.lastGrade = grade;
+  return { counted: !sameDay };
+}
+
+/* ---------------- Tools for Claude ---------------- */
+const TOOLS = [
+  { name: "get_overview", description: "Today's counts and limits, every topic with item counts and next due date, habits across topics, and links between topics. Call at the start of each block.", input_schema: { type: "object", properties: {} } },
+  { name: "get_due_items", description: "Review items due today or overdue, most overdue first then lowest ease, across all topics. Includes the answer, so do not read it out before I answer.", input_schema: { type: "object", properties: { limit: { type: "integer", description: "Max items, default 20" }, topic: { type: "string", description: "Optional: only this topic" } } } },
+  { name: "get_topic", description: "Full notes for one topic: big picture, all review items, weak spots and recent sessions.", input_schema: { type: "object", properties: { topic: { type: "string" } }, required: ["topic"] } },
+  { name: "create_topic", description: "Start a new topic.", input_schema: { type: "object", properties: { name: { type: "string" }, big_picture: { type: "string", description: "Three to six lines on the key ideas and how they connect" } }, required: ["name"] } },
+  { name: "update_big_picture", description: "Replace a topic's big-picture summary as it grows.", input_schema: { type: "object", properties: { topic: { type: "string" }, big_picture: { type: "string" } }, required: ["topic", "big_picture"] } },
+  { name: "add_items", description: "Add new review items to a topic: each a single question with a short answer. New items start at ease 2.0, due tomorrow. Respects the daily new-item limit.", input_schema: { type: "object", properties: { topic: { type: "string" }, items: { type: "array", items: { type: "object", properties: { question: { type: "string" }, answer: { type: "string" }, type: { type: "string", enum: ["fact", "reasoning"] } }, required: ["question", "answer", "type"] } } }, required: ["topic", "items"] } },
+  { name: "grade_item", description: "Grade my recall of one review item, judged from how I answered. easy: right, quick, confident, no hints. solid: right with some thinking. shaky: right only with a hint, or partly right. miss: wrong or needed the answer. confident_miss: wrong but said I was sure (re-ask later this block). The app computes the next due date.", input_schema: { type: "object", properties: { item_id: { type: "string" }, grade: { type: "string", enum: ["easy", "solid", "shaky", "miss", "confident_miss"] } }, required: ["item_id", "grade"] } },
+  { name: "edit_item", description: "Fix the wording of an item's question or answer, or delete it.", input_schema: { type: "object", properties: { item_id: { type: "string" }, question: { type: "string" }, answer: { type: "string" }, delete: { type: "boolean" } }, required: ["item_id"] } },
+  { name: "record_weak_spot", description: "Record a repeated mistake in a topic, written as the pattern behind it. Adds it, or counts another miss if it exists (resets its clean streak).", input_schema: { type: "object", properties: { topic: { type: "string" }, pattern: { type: "string" } }, required: ["topic", "pattern"] } },
+  { name: "mark_weak_spots_clean", description: "At the end of a block, list the weak spots I handled right without hints this block. After 3 clean blocks in a row a weak spot is retired.", input_schema: { type: "object", properties: { topic: { type: "string" }, patterns: { type: "array", items: { type: "string" } } }, required: ["topic", "patterns"] } },
+  { name: "add_habit", description: "Record a mistake pattern seen across more than one topic.", input_schema: { type: "object", properties: { habit: { type: "string" }, topics: { type: "array", items: { type: "string" } }, notes: { type: "string" } }, required: ["habit", "topics"] } },
+  { name: "add_link", description: "Record a good connection I made between topics, for later new-angle questions.", input_schema: { type: "object", properties: { link: { type: "string" } }, required: ["link"] } },
+  { name: "log_session", description: "Add a short session entry to a topic (keeps the last 5; older ones are archived).", input_schema: { type: "object", properties: { topic: { type: "string" }, covered: { type: "string" }, wrong_or_shaky: { type: "string" }, strong: { type: "string" }, next_time: { type: "string" } }, required: ["topic", "covered"] } },
+  { name: "finish_block", description: "Mark a study block as done. Returns how many blocks are done today so you can pick the right break.", input_schema: { type: "object", properties: { note: { type: "string", description: "Optional short note for today" } } } },
+];
+
+function topicSummary(t){
+  const nd = t.items.map(i => i.due).sort()[0] || "-";
+  return { topic: t.name, items: t.items.length, next_due: nd, last_studied: t.lastStudied || "-", weak_spots: t.weakSpots.filter(w => !w.retired).length };
+}
+function itemView(i){ return { item_id: i.id, topic: i.topic, question: i.q, answer: i.a, type: i.type, ease: i.ease, last_reviewed: i.last || "never", last_grade: i.lastGrade, due: i.due }; }
+
+function runTool(name, input){
+  const t = today(), d = day();
+  const needTopic = () => { const tp = findTopic(input.topic); if (!tp) throw new Error(`No topic named "${input.topic}". Existing: ${Object.values(R.topics).map(x => x.name).join(", ") || "none"}`); return tp; };
+  switch (name) {
+    case "get_overview": {
+      ensureDayStart();
+      const due = dueItems();
+      return {
+        today: t, time: nowTime(),
+        today_counts: { blocks_done: d.blocks, reviews_done: d.reviews, new_items_added: d.newItems },
+        limits: { new_items_per_day: newLimitToday(), reviews_per_day: S.reviewLimit, throttled: newLimitToday() < S.newLimit },
+        due_now: due.length, reviews_left_today: Math.max(0, S.reviewLimit - d.reviews),
+        topics: Object.values(R.topics).map(topicSummary),
+        open_weak_spots: Object.values(R.topics).flatMap(tp => tp.weakSpots.filter(w => !w.retired).map(w => ({ topic: tp.name, pattern: w.pattern, times_missed: w.missed, clean_blocks: w.clean }))),
+        habits_across_topics: R.habits, links_between_topics: R.links.slice(-15),
+        recent_days: Object.entries(R.days).sort().slice(-7).map(([k, v]) => ({ date: k, blocks: v.blocks, reviews: v.reviews, new_items: v.newItems })),
+      };
+    }
+    case "get_due_items": {
+      let due = dueItems();
+      if (input.topic) { const tp = needTopic(); due = due.filter(i => i.topic === tp.name); }
+      const left = Math.max(0, S.reviewLimit - d.reviews);
+      return { reviews_left_today: left, total_due: due.length, items: due.slice(0, Math.min(input.limit || 20, 40)).map(itemView) };
+    }
+    case "get_topic": {
+      const tp = needTopic();
+      return { topic: tp.name, big_picture: tp.bigPicture, items: tp.items.map(i => itemView({ ...i, topic: tp.name })), weak_spots: tp.weakSpots, recent_sessions: tp.sessions };
+    }
+    case "create_topic": {
+      const k = slug(input.name);
+      if (R.topics[k]) return { ok: true, note: "Topic already exists", topic: R.topics[k].name };
+      R.topics[k] = { name: input.name.trim(), bigPicture: input.big_picture || "", items: [], weakSpots: [], sessions: [], archive: [], created: t, lastStudied: t };
+      saveRecords(); return { ok: true, topic: input.name };
+    }
+    case "update_big_picture": { const tp = needTopic(); tp.bigPicture = input.big_picture; saveRecords(); return { ok: true }; }
+    case "add_items": {
+      const tp = needTopic(); const lim = newLimitToday();
+      const room = Math.max(0, lim - d.newItems);
+      const list = (input.items || []).slice(0, room); const ids = [];
+      for (const it of list) {
+        const id = "i" + (R.nextId++);
+        tp.items.push({ id, q: it.question, a: it.answer, type: it.type === "reasoning" ? "reasoning" : "fact", created: t, last: null, gap: 1, ease: 2.0, due: addDays(t, 1), lastGrade: "new" });
+        ids.push(id);
+      }
+      d.newItems += list.length; tp.lastStudied = t; saveRecords();
+      const skipped = (input.items || []).length - list.length;
+      return { added: ids, new_items_left_today: Math.max(0, lim - d.newItems), ...(skipped ? { skipped, reason: "Daily new-item limit reached. Pick only the most important ideas, or leave the rest for tomorrow." } : {}) };
+    }
+    case "grade_item": {
+      let found, tp;
+      for (const x of Object.values(R.topics)) { const i = x.items.find(i => i.id === input.item_id); if (i) { found = i; tp = x; break; } }
+      if (!found) throw new Error("No item " + input.item_id);
+      if (!GRADES[input.grade]) throw new Error("Unknown grade " + input.grade);
+      const { counted } = scheduleItem(found, input.grade);
+      if (counted) d.reviews++;
+      tp.lastStudied = t; saveRecords(); updateStats();
+      return { item_id: found.id, next_due: found.due, gap_days: found.gap, ease: found.ease, reviews_done_today: d.reviews, reviews_left_today: Math.max(0, S.reviewLimit - d.reviews), ...(input.grade === "confident_miss" ? { reminder: "Ask this one again later in this block, from a new angle." } : {}) };
+    }
+    case "edit_item": {
+      for (const x of Object.values(R.topics)) {
+        const idx = x.items.findIndex(i => i.id === input.item_id);
+        if (idx >= 0) {
+          if (input.delete) x.items.splice(idx, 1);
+          else { if (input.question) x.items[idx].q = input.question; if (input.answer) x.items[idx].a = input.answer; }
+          saveRecords(); return { ok: true };
+        }
+      }
+      throw new Error("No item " + input.item_id);
+    }
+    case "record_weak_spot": {
+      const tp = needTopic();
+      let w = tp.weakSpots.find(w => w.pattern.toLowerCase() === input.pattern.toLowerCase());
+      if (w) { w.missed++; w.clean = 0; w.retired = false; } else tp.weakSpots.push(w = { pattern: input.pattern, firstSeen: t, missed: 1, clean: 0, retired: false });
+      saveRecords(); return { ok: true, weak_spot: w };
+    }
+    case "mark_weak_spots_clean": {
+      const tp = needTopic(); const out = [];
+      for (const p of input.patterns || []) {
+        const w = tp.weakSpots.find(w => w.pattern.toLowerCase() === p.toLowerCase());
+        if (w) { w.clean++; if (w.clean >= 3) w.retired = true; out.push(w); }
+      }
+      saveRecords(); return { updated: out };
+    }
+    case "add_habit": { R.habits.push({ habit: input.habit, topics: input.topics, firstSeen: t, notes: input.notes || "" }); saveRecords(); return { ok: true }; }
+    case "add_link": { R.links.push({ link: input.link, date: t }); saveRecords(); return { ok: true }; }
+    case "log_session": {
+      const tp = needTopic();
+      tp.sessions.unshift({ date: t, covered: input.covered, wrongOrShaky: input.wrong_or_shaky || "", strong: input.strong || "", nextTime: input.next_time || "" });
+      while (tp.sessions.length > 5) tp.archive.push(tp.sessions.pop());
+      tp.lastStudied = t; saveRecords(); return { ok: true };
+    }
+    case "finish_block": {
+      d.blocks++; if (input.note) d.notes.push(input.note); saveRecords(); updateStats();
+      return { blocks_done_today: d.blocks, suggested_break: d.blocks % 3 === 0 ? "longer break, 20 to 30 minutes" : "5 to 10 minutes away from screens and audio" };
+    }
+  }
+  throw new Error("Unknown tool " + name);
+}
+
+/* ---------------- Conversation ---------------- */
+let session = null; // { started, messages: [] }
+async function loadSession(){
+  session = await idb.get("session");
+  if (!session || session.day !== today()) session = { day: today(), started: Date.now(), messages: [] };
+}
+const saveSession = () => idb.set("session", session).catch(() => {});
+
+function systemPrompt(){
+  return [{ type: "text", text: S.rules + "\n" + VOICE_RULES, cache_control: { type: "ephemeral" } }];
+}
+
+let client = null, clientKey = "";
+function getClient(){
+  if (!S.anthKey) throw new Error("Add your Anthropic API key in Settings first.");
+  if (!client || clientKey !== S.anthKey) { client = new Anthropic({ apiKey: S.anthKey, dangerouslyAllowBrowser: true, maxRetries: 2 }); clientKey = S.anthKey; }
+  return client;
+}
+let useFallbacks = lsGet("vt-fallbacks", true);
+
+/* ---------------- UI helpers ---------------- */
+const $ = id => document.getElementById(id);
+const logEl = $("log");
+function addMsg(cls, text){ const el = document.createElement("div"); el.className = "msg " + cls; el.textContent = text; logEl.appendChild(el); logEl.scrollTop = logEl.scrollHeight; return el; }
+function showErr(t){ addMsg("err", t); setState("idle", ""); beep("error"); }
+let state = "idle";
+function setState(s, text){
+  state = s; const b = $("talk");
+  b.className = s === "idle" ? "" : s;
+  b.textContent = { idle: "Talk", listening: "Send", thinking: "…", speaking: "Stop" }[s];
+  if (text != null) $("status").textContent = text;
+}
+function updateStats(){
+  if (!R) return;
+  const d = R.days[today()] || { blocks: 0, reviews: 0, newItems: 0 };
+  const due = dueItems().length;
+  const c = R.cost?.[today()] || 0;
+  $("stats").textContent = `Today: ${d.reviews}/${S.reviewLimit} reviews · ${d.newItems}/${newLimitToday()} new · ${d.blocks} blocks · ${due} due · about $${c.toFixed(2)}`;
+}
+function addCost(usd){ R.cost ??= {}; R.cost[today()] = (R.cost[today()] || 0) + usd; const ks = Object.keys(R.cost).sort(); while (ks.length > 60) delete R.cost[ks.shift()]; saveRecords(); updateStats(); }
+const PRICES = { "claude-opus-5-5": [4, 20, 0.20], "claude-sonnet-5-5": [2, 10, 0.10], "claude-haiku-5-5": [0.10, 0.50, 0.01] };
+function claudeCost(model, u){
+  const [i, o, cr] = PRICES[model] || PRICES["claude-opus-5-5"];
+  return ((u.input_tokens || 0) * i + (u.cache_creation_input_tokens || 0) * i * 1.25 + (u.cache_read_input_tokens || 0) * cr + (u.output_tokens || 0) * o) / 1e6;
+}
+
+/* ---------------- Phone helpers: beeps, screen wake lock, earbud buttons ---------------- */
+let beepCtx = null;
+function beep(kind){
+  if (!S.beeps) return;
+  try {
+    beepCtx ??= new AudioContext(); if (beepCtx.state === "suspended") beepCtx.resume();
+    const seq = { listen: [[660, 0], [880, .09]], send: [[700, 0], [520, .09]], error: [[240, 0], [240, .18]] }[kind];
+    for (const [f, t0] of seq) {
+      const o = beepCtx.createOscillator(), g = beepCtx.createGain(), t = beepCtx.currentTime + t0;
+      o.frequency.value = f; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + .01); g.gain.exponentialRampToValueAtTime(0.0001, t + .08);
+      o.connect(g).connect(beepCtx.destination); o.start(t); o.stop(t + .09);
+    }
+  } catch {}
+}
+let wakeLock = null;
+async function keepAwake(){
+  if (!S.keepAwake || !("wakeLock" in navigator) || wakeLock) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } catch {}
+}
+let unlocked = false;
+function unlockAudio(){
+  // phones only allow sound after a tap: play a tiny silent clip once, from the tap
+  if (unlocked) return; unlocked = true;
+  try { player.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="; player.play().catch(() => {}); } catch {}
+  beepCtx ??= new AudioContext(); beepCtx.resume?.();
+}
+function setupMediaSession(){
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({ title: "Voice Tutor", artist: "Study session" });
+  const toggle = () => talkPressed();
+  for (const a of ["play", "pause", "stop", "nexttrack", "previoustrack"]) { try { navigator.mediaSession.setActionHandler(a, toggle); } catch {} }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  keepAwake();
+  // the phone may have cut the mic while the screen was off: restart listening cleanly
+  if (state === "listening" && stream && stream.getAudioTracks()[0]?.readyState === "ended") { stream = null; stopListening(false); startListening(); }
+});
+
+/* ---------------- Speech out (OpenAI TTS), sentence by sentence ---------------- */
+const player = new Audio();
+let speakQueue = [], speaking = false, speakGen = 0, onSpeakDone = null;
+function cleanForSpeech(t){ return t.replace(/[*_#`>|~]/g, "").replace(/^\s*[-•]\s+/gm, "").replace(/\s+/g, " ").trim(); }
+function ttsFetch(text){
+  const ctrl = new AbortController();
+  const p = fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST", signal: ctrl.signal,
+    headers: { "Authorization": "Bearer " + S.oaiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: S.ttsModel, voice: S.voice, input: text, instructions: S.voiceStyle, response_format: "mp3", speed: Number(S.speed) || 1 }),
+  }).then(async r => { if (!r.ok) throw new Error("Voice error " + r.status + ": " + (await r.text()).slice(0, 200)); addCost(text.length * 0.015 / 900); return r.blob(); });
+  return { p, ctrl };
+}
+function enqueueSpeech(text){
+  text = cleanForSpeech(text); if (!text) return;
+  speakQueue.push(ttsFetch(text));
+  if (!speaking) playLoop(speakGen);
+}
+async function playLoop(gen){
+  speaking = true;
+  while (speakQueue.length && gen === speakGen) {
+    const { p } = speakQueue.shift();
+    let blob; try { blob = await p; } catch (e) { if (gen === speakGen && e.name !== "AbortError") addMsg("err", e.message); continue; }
+    if (gen !== speakGen) break;
+    const url = URL.createObjectURL(blob);
+    player.src = url; setupMediaSession();
+    if (state !== "listening") setState("speaking", "Speaking… tap to interrupt.");
+    await new Promise(res => { player.onended = player.onerror = res; player.play().catch(res); });
+    URL.revokeObjectURL(url);
+  }
+  speaking = false;
+  if (gen === speakGen && onSpeakDone) { const f = onSpeakDone; onSpeakDone = null; f(); }
+}
+function stopSpeaking(){
+  speakGen++; for (const q of speakQueue) q.ctrl.abort(); speakQueue = []; player.pause(); speaking = false; onSpeakDone = null;
+}
+function whenSpeechDone(){ return new Promise(res => { if (!speaking && !speakQueue.length) res(); else onSpeakDone = res; }); }
+
+/* ---------------- Tutor turn (Claude, streaming + tools) ---------------- */
+let busy = false, interrupted = false, listenWhenFree = false;
+async function tutorTurn(userText){
+  busy = true; interrupted = false;
+  const firstOfSession = session.messages.length === 0;
+  let content = `[${nowTime()}] ${userText}`;
+  if (firstOfSession) {
+    ensureDayStart();
+    content = `[App note: new session. Today is ${today()}, ${new Date().toLocaleDateString(undefined, { weekday: "long" })}. Records snapshot: ${JSON.stringify(runTool("get_overview", {}))}]\n` + content;
+  }
+  session.messages.push({ role: "user", content });
+  saveSession();
+  setState("thinking", "Thinking…");
+  const myGen = speakGen;
+  try {
+    for (let round = 0; round < 12; round++) {
+      const msg = await streamOnce(myGen);
+      session.messages.push({ role: "assistant", content: msg.content });
+      saveSession();
+      if (msg.stop_reason === "refusal") { addMsg("note", "The tutor declined that one. Try rephrasing."); break; }
+      const toolUses = msg.content.filter(b => b.type === "tool_use");
+      if (msg.stop_reason !== "tool_use" || !toolUses.length) break;
+      const results = toolUses.map(tu => {
+        try { return { type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(runTool(tu.name, tu.input || {})) }; }
+        catch (e) { return { type: "tool_result", tool_use_id: tu.id, content: "Error: " + e.message, is_error: true }; }
+      });
+      session.messages.push({ role: "user", content: results });
+      saveSession();
+      if (state === "thinking") setState("thinking", "Thinking…");
+    }
+  } catch (e) {
+    // drop a dangling user turn so the conversation stays valid
+    const last = session.messages[session.messages.length - 1];
+    if (last?.role === "user") session.messages.pop();
+    saveSession();
+    showErr(friendlyError(e)); busy = false; listenWhenFree = false; return;
+  }
+  busy = false;
+  if (listenWhenFree) { listenWhenFree = false; startListening(); return; }
+  await whenSpeechDone();
+  if (myGen !== speakGen) return; // interrupted: the interrupt handler already took over
+  setState("idle", "Your turn.");
+  if (S.handsfree) startListening();
+}
+
+function friendlyError(e){
+  const m = e?.message || String(e);
+  if (e?.status === 401 || /401/.test(m)) return "Anthropic rejected the API key (401). Check it in Settings.";
+  if (e?.status === 429) return "Anthropic rate limit hit. Wait a minute and try again.";
+  if (/Failed to fetch|NetworkError/i.test(m)) return "Network error reaching the tutor. Check your connection.";
+  return "Tutor error: " + m;
+}
+
+async function streamOnce(gen){
+  const c = getClient();
+  const params = {
+    model: S.model, max_tokens: 16000,
+    system: systemPrompt(), tools: TOOLS, messages: session.messages,
+    cache_control: { type: "ephemeral" },
+    thinking: { type: "adaptive" },
+    output_config: { effort: S.effort },
+  };
+  const fb = useFallbacks && S.model !== "claude-haiku-5-5";
+  if (fb) { params.betas = ["server-side-fallback-2026-07-01"]; params.fallbacks = "default"; }
+  let el = null, full = "", pending = "";
+  const flush = (force) => {
+    // speak complete sentences as soon as they arrive
+    const re = /[.!?…:;]["')\]]*\s+/g; let m, cut = -1;
+    while ((m = re.exec(pending))) if (m.index + m[0].length >= 18) cut = m.index + m[0].length;
+    if (force) cut = pending.length;
+    if (cut > 0) { const s = pending.slice(0, cut); pending = pending.slice(cut); if (gen === speakGen) enqueueSpeech(s); }
+  };
+  try {
+    const stream = fb ? c.beta.messages.stream(params) : c.messages.stream(params);
+    stream.on("text", (delta) => {
+      if (!el) el = addMsg("tutor", "");
+      full += delta; el.textContent = full; logEl.scrollTop = logEl.scrollHeight;
+      pending += delta; flush(false);
+    });
+    const msg = await stream.finalMessage();
+    flush(true);
+    addCost(claudeCost(S.model, msg.usage || {}));
+    return msg;
+  } catch (e) {
+    if (fb && e?.status === 400 && /fallback|beta/i.test(e.message || "")) { useFallbacks = false; lsSet("vt-fallbacks", false); return streamOnce(gen); }
+    throw e;
+  }
+}
+
+/* ---------------- Speech in (mic + OpenAI transcription) ---------------- */
+let stream = null, audioCtx = null, analyser = null, recorder = null, chunks = [], vadTimer = null, recStart = 0;
+async function ensureMic(){
+  if (stream && stream.getAudioTracks()[0]?.readyState === "live") return;
+  stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  audioCtx = new AudioContext();
+  analyser = audioCtx.createAnalyser(); analyser.fftSize = 2048;
+  audioCtx.createMediaStreamSource(stream).connect(analyser);
+}
+function pickMime(){ for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]) if (window.MediaRecorder?.isTypeSupported?.(m)) return m; return ""; }
+
+async function startListening(){
+  if (!S.oaiKey) { showErr("Add your OpenAI API key in Settings first."); return; }
+  try { await ensureMic(); } catch (e) { showErr("Microphone blocked: " + e.message + ". Allow the mic for this page and try again."); return; }
+  if (audioCtx.state === "suspended") await audioCtx.resume();
+  const mime = pickMime();
+  recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  chunks = []; recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+  recorder.start(250); recStart = Date.now();
+  beep("listen");
+  setState("listening", S.handsfree ? "Listening… just stop talking when you're done." : "Listening… tap Send when you're done.");
+  runVad();
+}
+function runVad(){
+  const buf = new Float32Array(analyser.fftSize);
+  let noise = 0.01, heard = false, lastLoud = Date.now(), loudSince = 0;
+  clearInterval(vadTimer);
+  vadTimer = setInterval(() => {
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0; for (const v of buf) sum += v * v; const rms = Math.sqrt(sum / buf.length);
+    $("levelbar").style.width = Math.min(100, rms * 900) + "%";
+    if (!heard) noise = noise * 0.95 + Math.min(rms, 0.05) * 0.05;
+    const thr = Math.max(0.012, noise * 2.5);
+    const now = Date.now();
+    if (rms > thr) { if (!loudSince) loudSince = now; if (now - loudSince > 180) { heard = true; } lastLoud = now; } else loudSince = 0;
+    if (!S.handsfree) return;
+    if (heard && now - lastLoud > S.silence * 1000) stopListening(true);
+    else if (!heard && now - recStart > 20000) { stopListening(false); startListening(); } // nothing said: restart quietly
+  }, 60);
+}
+function stopListening(send){
+  clearInterval(vadTimer); $("levelbar").style.width = "0";
+  if (!recorder || recorder.state === "inactive") return;
+  const rec = recorder; recorder = null;
+  rec.onstop = async () => {
+    if (!send) return;
+    const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+    const secs = (Date.now() - recStart) / 1000;
+    if (blob.size < 2000) { setState("idle", "Didn't catch that. Try again."); if (S.handsfree) startListening(); return; }
+    beep("send");
+    setState("thinking", "Transcribing…");
+    try {
+      const text = await transcribe(blob, secs);
+      if (!text || text.replace(/[^a-z0-9]/gi, "").length < 2) { setState("idle", "Didn't catch that. Try again."); if (S.handsfree) startListening(); return; }
+      handleUserText(text);
+    } catch (e) { showErr(e.message); }
+  };
+  rec.stop();
+}
+async function transcribe(blob, secs){
+  const ext = (blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm");
+  const fd = new FormData();
+  fd.append("file", blob, "speech." + ext);
+  fd.append("model", S.sttModel);
+  // the tutor's last words help recognition of topic vocabulary
+  const lastTutor = [...logEl.querySelectorAll(".tutor")].pop()?.textContent || "";
+  if (lastTutor) fd.append("prompt", lastTutor.slice(-600));
+  const r = await fetch("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { "Authorization": "Bearer " + S.oaiKey }, body: fd });
+  if (!r.ok) throw new Error((r.status === 401 ? "OpenAI rejected the API key (401). Check it in Settings." : "Transcription error " + r.status + ": " + (await r.text()).slice(0, 200)));
+  addCost(secs / 60 * 0.006);
+  return ((await r.json()).text || "").trim();
+}
+
+function handleUserText(text){
+  let t = text;
+  if (interrupted) { t = "[I interrupted you while you were speaking.] " + t; interrupted = false; }
+  addMsg("me", text);
+  tutorTurn(t);
+}
+
+/* ---------------- Button logic ---------------- */
+$("talk").addEventListener("click", () => { unlockAudio(); keepAwake(); talkPressed(); });
+function talkPressed(){
+  if (state === "listening") { stopListening(true); return; }
+  if (state === "speaking") { stopSpeaking(); interrupted = true; if (busy) { listenWhenFree = true; setState("thinking", "One moment, the tutor is finishing its notes…"); return; } startListening(); return; }
+  if (state === "thinking") return;
+  startListening();
+}
+document.addEventListener("keydown", e => {
+  if (e.code === "Space" && !e.repeat && !["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(document.activeElement?.tagName) && !document.querySelector("dialog[open]")) { e.preventDefault(); $("talk").click(); }
+});
+$("typeform").addEventListener("submit", e => {
+  e.preventDefault(); const v = $("typed").value.trim(); if (!v || busy) return;
+  $("typed").value = ""; if (state === "listening") stopListening(false); stopSpeaking(); handleUserText(v);
+});
+$("handsfree").checked = !!S.handsfree;
+$("handsfree").addEventListener("change", e => { S.handsfree = e.target.checked; saveSettings(); });
+$("keepawake").checked = !!S.keepAwake;
+$("keepawake").addEventListener("change", e => { S.keepAwake = e.target.checked; saveSettings(); if (S.keepAwake) keepAwake(); else { wakeLock?.release(); wakeLock = null; } });
+if (location.protocol === "https:" && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+
+$("btnNew").addEventListener("click", () => {
+  if (busy) return;
+  stopSpeaking(); if (state === "listening") stopListening(false);
+  session = { day: today(), started: Date.now(), messages: [] }; saveSession();
+  logEl.textContent = ""; addMsg("note", "New session. Your records carry over. Say hello, or tell the tutor what you want to study.");
+  setState("idle", "Tap the button and start talking.");
+});
+
+/* ---------------- Settings dialog ---------------- */
+const fields = { sAnthKey: "anthKey", sOaiKey: "oaiKey", sModel: "model", sEffort: "effort", sVoice: "voice", sSpeed: "speed", sSttModel: "sttModel", sTtsModel: "ttsModel", sVoiceStyle: "voiceStyle", sSilence: "silence", sNewLimit: "newLimit", sReviewLimit: "reviewLimit", sRules: "rules" };
+const numeric = new Set(["speed", "silence", "newLimit", "reviewLimit"]);
+function openSettings(){
+  for (const [id, k] of Object.entries(fields)) $(id).value = S[k];
+  const ks = Object.keys(R.cost || {}).sort().slice(-30); const sum = ks.reduce((a, k) => a + R.cost[k], 0);
+  $("costLine").textContent = `Estimated spend, last ${ks.length} days with use: about $${sum.toFixed(2)}. This is a rough estimate; your Anthropic and OpenAI dashboards have exact numbers.`;
+  $("dlgSettings").showModal();
+}
+$("btnSettings").addEventListener("click", openSettings);
+$("btnSaveSettings").addEventListener("click", () => {
+  for (const [id, k] of Object.entries(fields)) { const v = $(id).value; S[k] = numeric.has(k) ? Number(v) : (k.endsWith("Key") ? v.trim() : v); }
+  saveSettings(); $("dlgSettings").close(); updateStats();
+  if (S.anthKey && S.oaiKey) $("status").textContent = "Saved. Tap the button and start talking.";
+});
+$("btnResetRules").addEventListener("click", () => { $("sRules").value = DEFAULT_RULES; });
+$("btnTestVoice").addEventListener("click", () => {
+  const saved = S;
+  S = { ...S, oaiKey: $("sOaiKey").value.trim(), voice: $("sVoice").value, speed: Number($("sSpeed").value) || 1, ttsModel: $("sTtsModel").value.trim(), voiceStyle: $("sVoiceStyle").value };
+  if (!S.oaiKey) { alertInline("Add your OpenAI key first."); S = saved; return; }
+  stopSpeaking(); enqueueSpeech("Hi Liam. This is how I'll sound. Ready when you are?");
+  S = saved; // the request above already captured the test values
+});
+function alertInline(t){ $("costLine").textContent = t; }
+document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => b.closest("dialog").close()));
+
+/* ---------------- Backup / restore / export ---------------- */
+function download(name, text, type){ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+$("btnBackup").addEventListener("click", () => download(`voice-tutor-backup-${today()}.json`, JSON.stringify({ records: R, session }, null, 1), "application/json"));
+$("fileRestore").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!data.records?.topics) throw new Error("This doesn't look like a Voice Tutor backup.");
+    R = data.records; await idb.set("records", R);
+    if (data.session) { session = data.session; await idb.set("session", session); }
+    updateStats(); alertInline("Backup restored.");
+  } catch (err) { alertInline("Restore failed: " + err.message); }
+  e.target.value = "";
+});
+function recordsMarkdown(){
+  const L = [];
+  L.push(`# Learning log (exported ${today()})`, "", "## Recent days", "", "| Date | Blocks | Reviews | New items |", "|---|---|---|---|");
+  for (const [k, v] of Object.entries(R.days).sort().reverse().slice(0, 7)) L.push(`| ${k} | ${v.blocks} | ${v.reviews} | ${v.newItems} |`);
+  L.push("", "## Topics", "", "| Topic | Items | Next due | Last studied |", "|---|---|---|---|");
+  for (const t of Object.values(R.topics)) { const s = topicSummary(t); L.push(`| ${s.topic} | ${s.items} | ${s.next_due} | ${s.last_studied} |`); }
+  L.push("", "## Habits across topics", "");
+  for (const h of R.habits) L.push(`- ${h.habit} (${h.topics.join(", ")}; first seen ${h.firstSeen})${h.notes ? ": " + h.notes : ""}`);
+  if (!R.habits.length) L.push("- (none yet)");
+  L.push("", "## Links between topics", "");
+  for (const l of R.links) L.push(`- ${l.link} (${l.date})`);
+  if (!R.links.length) L.push("- (none yet)");
+  for (const t of Object.values(R.topics)) {
+    L.push("", "---", "", `# Topic: ${t.name}`, "", "## Big picture", "", t.bigPicture || "(not written yet)", "", "## Review items", "", "| Question | Answer | Type | Last reviewed | Gap | Ease | Next due | Last grade |", "|---|---|---|---|---|---|---|---|");
+    for (const i of [...t.items].sort((a, b) => a.due < b.due ? -1 : 1)) L.push(`| ${i.q} | ${i.a} | ${i.type} | ${i.last || "-"} | ${i.gap} | ${i.ease} | ${i.due} | ${i.lastGrade} |`);
+    L.push("", "## Weak spots", "", "| Weak spot | First seen | Times missed | Clean blocks in a row | Retired |", "|---|---|---|---|---|");
+    for (const w of t.weakSpots) L.push(`| ${w.pattern} | ${w.firstSeen} | ${w.missed} | ${w.clean} | ${w.retired ? "yes" : "no"} |`);
+    L.push("", "## Recent sessions", "");
+    for (const s of t.sessions) L.push(`### ${s.date}`, `- Covered: ${s.covered}`, `- Got wrong / shaky: ${s.wrongOrShaky}`, `- Strong: ${s.strong}`, `- Next time: ${s.nextTime}`, "");
+  }
+  return L.join("\n");
+}
+$("btnExportMd").addEventListener("click", () => download(`learning-log-${today()}.md`, recordsMarkdown(), "text/markdown"));
+$("btnRecords").addEventListener("click", () => { $("recordsText").textContent = recordsMarkdown(); $("dlgRecords").showModal(); });
+
+/* ---------------- Start ---------------- */
+await loadRecords(); await loadSession();
+updateStats();
+if (session.messages.length) {
+  for (const m of session.messages) {
+    if (m.role === "user" && typeof m.content === "string") addMsg("me", m.content.replace(/^\[App note:[\s\S]*?\]\n/, "").replace(/^\[\d\d:\d\d\] /, ""));
+    if (m.role === "assistant") { const t = m.content.filter(b => b.type === "text").map(b => b.text).join(""); if (t) addMsg("tutor", t); }
+  }
+  addMsg("note", "Picked up where you left off today.");
+} else addMsg("note", "Say hello, or tell the tutor what you want to study. Space bar also works as the talk button.");
+if (!S.anthKey || !S.oaiKey) { $("status").textContent = "First, open Settings and add your two API keys."; openSettings(); }
+setInterval(updateStats, 60000);
+</script>
+</body>
+</html>

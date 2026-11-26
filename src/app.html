@@ -89,6 +89,7 @@ pre.records{white-space:pre-wrap;font-size:13px;font-family:ui-monospace,Consola
     <div id="level"><div id="levelbar"></div></div>
     <div class="row">
       <label class="toggle"><input type="checkbox" id="handsfree"> Hands-free</label>
+      <label class="toggle"><input type="checkbox" id="bargein"> Interrupt by talking</label>
       <label class="toggle"><input type="checkbox" id="keepawake"> Keep screen on</label>
     </div>
     <form class="row" id="typeform">
@@ -230,9 +231,10 @@ const DEFAULT_SETTINGS = {
   anthKey: "", oaiKey: "", model: "claude-opus-5-5", effort: "low",
   voice: "marin", speed: 1.0, sttModel: "gpt-4o-transcribe", ttsModel: "gpt-4o-mini-tts",
   voiceStyle: "A warm, curious, encouraging tutor. Speak naturally and clearly at a relaxed conversational pace.",
-  silence: 1.4, newLimit: 30, reviewLimit: 100, rules: DEFAULT_RULES, handsfree: IS_PHONE, keepAwake: IS_PHONE, beeps: true,
+  silence: 1.5, newLimit: 30, reviewLimit: 100, rules: DEFAULT_RULES, handsfree: true, keepAwake: IS_PHONE, beeps: true, bargeIn: true,
 };
 let S = { ...DEFAULT_SETTINGS, ...lsGet("vt-settings", {}) };
+if ((S.v || 1) < 2) { S.handsfree = true; S.bargeIn = true; S.silence = 1.5; S.v = 2; lsSet("vt-settings", S); } // hands-off by default
 const saveSettings = () => lsSet("vt-settings", S);
 
 /* ---------------- Dates ---------------- */
@@ -511,7 +513,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   keepAwake();
   // the phone may have cut the mic while the screen was off: restart listening cleanly
-  if (state === "listening" && stream && stream.getAudioTracks()[0]?.readyState === "ended") { stream = null; stopListening(false); startListening(); }
+  if (stream && stream.getAudioTracks()[0]?.readyState === "ended") { stream = null; if (state === "listening") { stopListening(false); startListening(); } }
 });
 
 /* ---------------- Speech out (OpenAI TTS), sentence by sentence ---------------- */
@@ -553,7 +555,7 @@ function stopSpeaking(){
 function whenSpeechDone(){ return new Promise(res => { if (!speaking && !speakQueue.length) res(); else onSpeakDone = res; }); }
 
 /* ---------------- Tutor turn (Claude, streaming + tools) ---------------- */
-let busy = false, interrupted = false, listenWhenFree = false;
+let busy = false, interrupted = false, listenWhenFree = false, queuedText = "";
 async function tutorTurn(userText){
   busy = true; interrupted = false;
   const firstOfSession = session.messages.length === 0;
@@ -590,9 +592,10 @@ async function tutorTurn(userText){
     showErr(friendlyError(e)); busy = false; listenWhenFree = false; return;
   }
   busy = false;
-  if (listenWhenFree) { listenWhenFree = false; startListening(); return; }
+  if (queuedText) { const q = queuedText; queuedText = ""; tutorTurn(q); return; } // you spoke while it was still working
+  if (state === "listening") return;
   await whenSpeechDone();
-  if (myGen !== speakGen) return; // interrupted: the interrupt handler already took over
+  if (myGen !== speakGen || state === "listening") return; // interrupted: already listening to you
   setState("idle", "Your turn.");
   if (S.handsfree) startListening();
 }
@@ -641,67 +644,109 @@ async function streamOnce(gen){
   }
 }
 
-/* ---------------- Speech in (mic + OpenAI transcription) ---------------- */
-let stream = null, audioCtx = null, analyser = null, recorder = null, chunks = [], vadTimer = null, recStart = 0;
+/* ---------------- Speech in (mic + OpenAI transcription) ----------------
+   The mic stays open once started. Every ~40 ms we measure loudness against a
+   self-adjusting background-noise level. In hands-free mode a turn ends after
+   a pause, and speaking over the tutor interrupts it. Audio is kept as raw
+   samples (with half a second before speech starts) and sent as a WAV file. */
+let stream = null, audioCtx = null, capNode = null, srcNode = null;
+let mic = { floor: 0.003, rec: null, pre: [], preLen: 0, inSpeech: false, speechT: 0, silentT: 0, heard: false, turnT: 0, loudT: 0 };
 async function ensureMic(){
-  if (stream && stream.getAudioTracks()[0]?.readyState === "live") return;
-  stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  audioCtx = new AudioContext();
-  analyser = audioCtx.createAnalyser(); analyser.fftSize = 2048;
-  audioCtx.createMediaStreamSource(stream).connect(analyser);
+  if (stream && stream.getAudioTracks()[0]?.readyState === "live" && audioCtx?.state !== "closed") return;
+  stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false, channelCount: 1 } });
+  audioCtx ??= beepCtx || new AudioContext();
+  if (audioCtx.state === "suspended") await audioCtx.resume();
+  srcNode?.disconnect(); capNode?.disconnect();
+  srcNode = audioCtx.createMediaStreamSource(stream);
+  const hp = audioCtx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 120; // cuts wind and footstep rumble
+  srcNode.connect(hp);
+  try {
+    const code = `class Cap extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(2048);this.n=0}process(i){const c=i[0]&&i[0][0];if(c){for(let k=0;k<c.length;k++){this.b[this.n++]=c[k];if(this.n===2048){this.port.postMessage(this.b.slice(0));this.n=0}}}return true}}registerProcessor("cap",Cap)`;
+    await audioCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
+    capNode = new AudioWorkletNode(audioCtx, "cap");
+    capNode.port.onmessage = e => onFrame(e.data);
+  } catch {
+    capNode = audioCtx.createScriptProcessor(2048, 1, 1);
+    capNode.onaudioprocess = e => onFrame(e.inputBuffer.getChannelData(0).slice(0));
+  }
+  const mute = audioCtx.createGain(); mute.gain.value = 0;
+  hp.connect(capNode); capNode.connect(mute); mute.connect(audioCtx.destination);
 }
-function pickMime(){ for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]) if (window.MediaRecorder?.isTypeSupported?.(m)) return m; return ""; }
+function onFrame(f){
+  const dt = f.length / audioCtx.sampleRate;
+  let sum = 0; for (let i = 0; i < f.length; i++) sum += f[i] * f[i];
+  const rms = Math.sqrt(sum / f.length);
+  // background level: drops fast to quiet moments, creeps up slowly
+  mic.floor = rms < mic.floor ? mic.floor * 0.6 + rms * 0.4 : mic.floor * 1.0015;
+  mic.floor = Math.max(mic.floor, 0.0003);
+  const startThr = Math.max(mic.floor * 3.5, 0.004), stopThr = Math.max(mic.floor * 2, 0.0025);
+  $("levelbar").style.width = Math.min(100, rms / (startThr * 2) * 100) + "%";
+  // half a second of audio before speech starts, so first words aren't clipped
+  mic.pre.push(f); mic.preLen += f.length;
+  while (mic.preLen - mic.pre[0].length > audioCtx.sampleRate * 0.5) mic.preLen -= mic.pre.shift().length;
 
-async function startListening(){
+  if (state === "speaking" && S.handsfree && S.bargeIn) {
+    // talking over the tutor (needs to be clearly louder than its voice leaking in)
+    mic.loudT = rms > Math.max(mic.floor * 6, 0.02) ? mic.loudT + dt : 0;
+    if (mic.loudT > 0.35) { mic.loudT = 0; stopSpeaking(); interrupted = true; startListening(true); }
+    return;
+  }
+  if (state !== "listening" || !mic.rec) return;
+  mic.rec.push(f); mic.turnT += dt;
+  if (rms > startThr) { mic.speechT += dt; mic.silentT = 0; if (mic.speechT > 0.2) mic.heard = true; }
+  else if (rms < stopThr) { mic.silentT += dt; if (!mic.heard) mic.speechT = 0; }
+  if (!S.handsfree) { if (mic.turnT > 300) stopListening(true); return; }
+  if (mic.heard && mic.silentT >= S.silence) stopListening(true);
+  else if (mic.heard && mic.turnT > 120) stopListening(true);            // very long turn: send it anyway
+  else if (!mic.heard && mic.turnT > 20) { mic.rec = []; mic.turnT = 0; mic.speechT = 0; } // nothing said yet: keep waiting
+}
+
+async function startListening(fromBargeIn = false){
   if (!S.oaiKey) { showErr("Add your OpenAI API key in Settings first."); return; }
   try { await ensureMic(); } catch (e) { showErr("Microphone blocked: " + e.message + ". Allow the mic for this page and try again."); return; }
-  if (audioCtx.state === "suspended") await audioCtx.resume();
-  const mime = pickMime();
-  recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  chunks = []; recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
-  recorder.start(250); recStart = Date.now();
-  beep("listen");
-  setState("listening", S.handsfree ? "Listening… just stop talking when you're done." : "Listening… tap Send when you're done.");
-  runVad();
-}
-function runVad(){
-  const buf = new Float32Array(analyser.fftSize);
-  let noise = 0.01, heard = false, lastLoud = Date.now(), loudSince = 0;
-  clearInterval(vadTimer);
-  vadTimer = setInterval(() => {
-    analyser.getFloatTimeDomainData(buf);
-    let sum = 0; for (const v of buf) sum += v * v; const rms = Math.sqrt(sum / buf.length);
-    $("levelbar").style.width = Math.min(100, rms * 900) + "%";
-    if (!heard) noise = noise * 0.95 + Math.min(rms, 0.05) * 0.05;
-    const thr = Math.max(0.012, noise * 2.5);
-    const now = Date.now();
-    if (rms > thr) { if (!loudSince) loudSince = now; if (now - loudSince > 180) { heard = true; } lastLoud = now; } else loudSince = 0;
-    if (!S.handsfree) return;
-    if (heard && now - lastLoud > S.silence * 1000) stopListening(true);
-    else if (!heard && now - recStart > 20000) { stopListening(false); startListening(); } // nothing said: restart quietly
-  }, 60);
+  if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch {} }
+  mic.rec = fromBargeIn ? [...mic.pre] : [];
+  mic.turnT = 0; mic.silentT = 0; mic.speechT = fromBargeIn ? 0.3 : 0; mic.heard = fromBargeIn;
+  if (!fromBargeIn) beep("listen");
+  setState("listening", S.handsfree ? "Listening… just pause when you're done." : "Listening… tap Send when you're done.");
 }
 function stopListening(send){
-  clearInterval(vadTimer); $("levelbar").style.width = "0";
-  if (!recorder || recorder.state === "inactive") return;
-  const rec = recorder; recorder = null;
-  rec.onstop = async () => {
-    if (!send) return;
-    const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-    const secs = (Date.now() - recStart) / 1000;
-    if (blob.size < 2000) { setState("idle", "Didn't catch that. Try again."); if (S.handsfree) startListening(); return; }
-    beep("send");
-    setState("thinking", "Transcribing…");
+  $("levelbar").style.width = "0";
+  const rec = mic.rec; mic.rec = null;
+  if (!rec || !send) return;
+  if (!mic.heard && S.handsfree) { startListening(); return; }
+  const secs = rec.reduce((a, f) => a + f.length, 0) / audioCtx.sampleRate;
+  beep("send");
+  setState("thinking", "Transcribing…");
+  (async () => {
     try {
-      const text = await transcribe(blob, secs);
-      if (!text || text.replace(/[^a-z0-9]/gi, "").length < 2) { setState("idle", "Didn't catch that. Try again."); if (S.handsfree) startListening(); return; }
+      const text = await transcribe(toWav(rec, audioCtx.sampleRate), secs);
+      if (!text || text.replace(/[^a-z0-9]/gi, "").length < 2) { setState("idle", "Didn't catch that."); if (S.handsfree) startListening(); return; }
       handleUserText(text);
-    } catch (e) { showErr(e.message); }
-  };
-  rec.stop();
+    } catch (e) { showErr(e.message); if (S.handsfree) setTimeout(() => state === "idle" && startListening(), 3000); }
+  })();
+}
+function toWav(frames, rate){
+  // mono 16 kHz 16-bit WAV
+  const out = 16000, ratio = rate / out;
+  const total = frames.reduce((a, f) => a + f.length, 0);
+  const all = new Float32Array(total); let o = 0; for (const f of frames) { all.set(f, o); o += f.length; }
+  const n = Math.floor(total / ratio), pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(i * ratio), b = Math.min(total, Math.floor((i + 1) * ratio)); let s = 0;
+    for (let k = a; k < b; k++) s += all[k];
+    const v = Math.max(-1, Math.min(1, s / Math.max(1, b - a))); pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  const buf = new ArrayBuffer(44 + pcm.length * 2), dv = new DataView(buf);
+  const w = (p, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(p + i, str.charCodeAt(i)); };
+  w(0, "RIFF"); dv.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVE"); w(12, "fmt ");
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, out, true);
+  dv.setUint32(28, out * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, "data"); dv.setUint32(40, pcm.length * 2, true);
+  new Int16Array(buf, 44).set(pcm);
+  return new Blob([buf], { type: "audio/wav" });
 }
 async function transcribe(blob, secs){
-  const ext = (blob.type.includes("mp4") ? "mp4" : blob.type.includes("ogg") ? "ogg" : "webm");
+  const ext = "wav";
   const fd = new FormData();
   fd.append("file", blob, "speech." + ext);
   fd.append("model", S.sttModel);
@@ -718,6 +763,7 @@ function handleUserText(text){
   let t = text;
   if (interrupted) { t = "[I interrupted you while you were speaking.] " + t; interrupted = false; }
   addMsg("me", text);
+  if (busy) { queuedText += (queuedText ? " " : "") + t; setState("thinking", "Got it. One moment…"); return; }
   tutorTurn(t);
 }
 
@@ -725,7 +771,7 @@ function handleUserText(text){
 $("talk").addEventListener("click", () => { unlockAudio(); keepAwake(); talkPressed(); });
 function talkPressed(){
   if (state === "listening") { stopListening(true); return; }
-  if (state === "speaking") { stopSpeaking(); interrupted = true; if (busy) { listenWhenFree = true; setState("thinking", "One moment, the tutor is finishing its notes…"); return; } startListening(); return; }
+  if (state === "speaking") { stopSpeaking(); interrupted = true; startListening(); return; }
   if (state === "thinking") return;
   startListening();
 }
@@ -738,6 +784,8 @@ $("typeform").addEventListener("submit", e => {
 });
 $("handsfree").checked = !!S.handsfree;
 $("handsfree").addEventListener("change", e => { S.handsfree = e.target.checked; saveSettings(); });
+$("bargein").checked = !!S.bargeIn;
+$("bargein").addEventListener("change", e => { S.bargeIn = e.target.checked; saveSettings(); });
 $("keepawake").checked = !!S.keepAwake;
 $("keepawake").addEventListener("change", e => { S.keepAwake = e.target.checked; saveSettings(); if (S.keepAwake) keepAwake(); else { wakeLock?.release(); wakeLock = null; } });
 if (location.protocol === "https:" && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
